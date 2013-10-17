@@ -1,2 +1,5 @@
 require "eb_fast_deploy/version"
-require "tasks/eb_fast_deploy"
+
+if defined?(Rake)
+  require "tasks/eb_fast_deploy"
+end
