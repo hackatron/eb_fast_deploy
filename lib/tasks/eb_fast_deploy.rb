@@ -1,4 +1,4 @@
-require "../eb_fast_deploy/version"
+require "eb_fast_deploy/version"
 
 def do_cmd(cmd)
   print "- - - cmd: #{cmd}\n"
