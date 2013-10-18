@@ -1,6 +1,7 @@
 require "eb_fast_deploy/version"
 require 'aws-sdk'
 require 'dotenv/environment'
+require 'fog'
 
 def do_cmd(cmd)
   print "- - - cmd: #{cmd}\n"
@@ -9,70 +10,65 @@ def do_cmd(cmd)
 end
 
 def set_vars
-  ENV['EB_TARGET'] = (ENV['EB_TARGET'] || "STAGE").upcase
-  @eb_environment = ENV["EB_#{ENV['EB_TARGET']}_ENVIRONMENT"]
-  @application_name = ENV["EB_#{ENV['EB_TARGET']}_APPLICATION_NAME"]
-  #ENV['AWS_ACCESS_KEY_ID']= ENV["EB_#{ENV['EB_TARGET']}_AWS_ACCESS_KEY_ID"]
-  #ENV['AWS_SECRET_ACCESS_KEY'] = ENV["EB_#{ENV['EB_TARGET']}_AWS_SECRET_ACCESS_KEY"]
-  ENV['EB_ELASTICBEANSTALK_URL'] = ENV["EB_#{ENV['EB_TARGET']}_ELASTICBEANSTALK_URL"]
-  ENV['FOG_DIRECTORY'] = ENV["EB_#{ENV['EB_TARGET']}_FOG_DIRECTORY"]
-  ENV['FOG_DEPLOY_DIRECTORY'] = ENV["EB_#{ENV['EB_TARGET']}_FOG_DEPLOY_DIRECTORY"]
-  @deploy_tmp_dir = "/home/vagrant/tmp/holden-fandom_for_deploy"
-  @deploy_zip_file_path = "/home/vagrant/tmp/holden-fandom_for_deploy.zip"
-  @aws_credential_file = "#{Rails.root}/tmp/aws_credential_file"
+  return if @is_config_loaded
+  puts "-------------------------------------------------------------"
+
+  @is_config_loaded = true
+
+  sha1 = `git log | head -1|cut -d \" \" -f2`
+  sha1 = sha1.gsub("\n","")
+  @version_label = "#{Time.now.to_i}-git-#{sha1}"
+  dirname = "#{ENV['APP_NAME'].gsub(' ', '')}_#{ENV['ENVIRONMENT'].gsub(' ', '')}"
+
+  @deploy_tmp_dir = ENV['COPY_CACHE'] || "/tmp/#{dirname}_eb_deploy"
+  @deploy_zip_filename = "#{dirname}_#{@version_label}.zip"
+  @deploy_zip_file_path = "#{@deploy_tmp_dir}/#{@deploy_zip_filename}"
+
+  puts "dirname: #{dirname}"
+  puts "version_label: #{@version_label}"
+  puts "@deploy_tmp_dir: #{@deploy_tmp_dir}"
+  puts "@deploy_zip_filename: #{@deploy_zip_filename}"
+  puts "@deploy_zip_file_path: #{@deploy_zip_file_path}"
 
   @env_file_path = Rails.root.to_s+"/config/eb_environments/#{ENV['ENVIRONMENT']}/ruby_container_options"
   if File.exists?(@env_file_path)
-    @eb_env = Dotenv::Environment.new(@env_file_path)
+    @eb_ruby_container_options = Dotenv::Environment.new(@env_file_path)
   end
 
   AWS.config(
     access_key_id: ENV['AWS_ACCESS_KEY_ID'],
     secret_access_key: ENV['AWS_SECRET_ACCESS_KEY'],
-    region: ENV['FOG_REGION']
+    region: ENV['AWS_REGION']
   )
-
-  print "--- setting ENV ---\n"
-  print "ENV['EB_TARGET']: #{ENV['EB_TARGET']}\n"
-  print "ENV['AWS_ACCESS_KEY_ID']=#{ENV['AWS_ACCESS_KEY_ID']}\n"
-  print "ENV['AWS_SECRET_ACCESS_KEY']=#{ENV['AWS_SECRET_ACCESS_KEY']}\n"
-  print "ENV['FOG_DIRECTORY']=#{ENV['FOG_DIRECTORY']}\n"
-  print "ENV['FOG_DEPLOY_DIRECTORY']=#{ENV['FOG_DEPLOY_DIRECTORY']}\n"
-  print "@eb_environment: #{@eb_environment}\n"
-  print "@aws_credential_file: #{@aws_credential_file}\n"
-  print
 end
 
 def rails_options
   opts = []
-  @eb_env.each do |k,v| 
+  @eb_ruby_container_options.each do |k,v|
     opts << {:namespace => "aws:elasticbeanstalk:application:environment", :option_name =>k, :value=>v}
   end
   opts
 end
 
 namespace :eb do
+  desc "setvars"
+  task :setvars do
+    set_vars
+  end
+
   desc "assets compile and upload to S3"
   task :assets do
-    set_vars unless @eb_environment
+    set_vars
 
-    do_cmd "rake assets:precompile FOG_DIRECTORY=#{ENV['FOG_DIRECTORY']} AWS_ACCESS_KEY_ID=#{ENV['AWS_ACCESS_KEY_ID']} AWS_SECRET_ACCESS_KEY=#{ENV['AWS_SECRET_ACCESS_KEY']}"
-    do_cmd "mv public/assets/manifest.yml tmp/"
-    do_cmd "rm public/assets/* -Rf"
-    do_cmd "mv tmp/manifest.yml public/assets/"
+    do_cmd "rake assets:precompile"
   end
 
   desc "bundle pack"
   task :bundle_pack do
-    set_vars unless @eb_environment
+    set_vars
 
-    do_cmd "rm vendor/cache -Rf"
-    do_cmd "bundle install"
-
-    #gems
-    #call "bundle pack --all" from shell before this rake
-    #because it doesn't pach git gems
-    do_cmd "bundle pack --all"
+    do_cmd "env RUBYOPT= bundle package --all"
+#    do_cmd "bundle install"
 
   end
 
@@ -81,7 +77,7 @@ namespace :eb do
     print "=== upload project to s3 ===\n"
     print "\n"
 
-    set_vars unless @eb_environment
+    set_vars
 
     do_cmd "mkdir #{@deploy_tmp_dir}"
     do_cmd "rm #{@deploy_zip_file_path}"
@@ -90,20 +86,20 @@ namespace :eb do
     current_dir = `pwd`
     do_cmd "cd #{@deploy_tmp_dir} && zip -r #{@deploy_zip_file_path} . && cd #{pwd}"
 
-    print "storage = Fog::Storage.new provider: #{ENV['FOG_PROVIDER']}, aws_access_key_id: #{ENV['AWS_ACCESS_KEY_ID']}, aws_secret_access_key: #{ENV['AWS_SECRET_ACCESS_KEY']}\n"
+    print "storage = Fog::Storage.new provider: AWS, aws_access_key_id: #{ENV['AWS_ACCESS_KEY_ID']}, aws_secret_access_key: #{ENV['AWS_SECRET_ACCESS_KEY']}\n"
     storage = Fog::Storage.new({
-    provider: ENV['FOG_PROVIDER'],
-    region: ENV['FOG_REGION'],
+    provider: 'AWS',
+    region: ENV['AWS_REGION'],
     aws_access_key_id: ENV['AWS_ACCESS_KEY_ID'],
     aws_secret_access_key: ENV['AWS_SECRET_ACCESS_KEY']
     })
-    print "bucket = storage.directories.get(#{ENV['FOG_DEPLOY_DIRECTORY']})\n"
-    bucket = storage.directories.get(ENV['FOG_DEPLOY_DIRECTORY'])
+    print "bucket = storage.directories.get(#{ENV['AWS_DEPLOY_BUCKET']})\n"
+    bucket = storage.directories.get(ENV['AWS_DEPLOY_BUCKET'])
 
     if File.exist? @deploy_zip_file_path
       print "creating new remote file..."
       deploy_zip_file = File.open @deploy_zip_file_path, "r"
-      remote_file = bucket.files.new key: "prj.zip", body: deploy_zip_file
+      remote_file = bucket.files.new key: @deploy_zip_filename, body: deploy_zip_file
       result = remote_file.save
       print "remote_file.save: #{result}\n"
     else
@@ -112,53 +108,23 @@ namespace :eb do
 
   end
 
-  desc "disable memcache"
-  task :disable_memcache do
-    #assets precompile run in production env and search for memcache server
-    do_cmd "sed -i 's/^  elasticache/#  elasticache/' #{Rails.root}/config/environments/production.rb"
-    do_cmd "sed -i 's/^  config.cache_store/#  config.cache_store/' #{Rails.root}/config/environments/production.rb"
-  end
-
-  desc "elastic beanstalk config"
-  task :cfg do
-    set_vars unless @eb_environment
-
-    #create temporary aws_credentials file
-    f = File.new(@aws_credential_file, "w+")
-
-    content = ""
-    content << "AWSAccessKeyId=#{ENV['AWS_ACCESS_KEY_ID']}\n"
-    content << "AWSSecretKey=#{ENV['AWS_SECRET_ACCESS_KEY']}\n"
-    f.write content
-    f.close
-
-    #eb cfg
-    eb_cfg_path = "#{Rails.root}/.elasticbeanstalk/config"
-    f = File.new(eb_cfg_path, "a+")
-
-    f.write "ApplicationName=#{@application_name}\n"
-    f.close
-  end
-
   desc "publish to elastic beanstalk"
-  task :publish do
-    set_vars unless @eb_environment
+  task :create_and_deploy_version do
+    set_vars
 
-    sha1 = do_cmd "git log | head -1|cut -d \" \" -f2"
-    version_label = "#{Time.now}-git-#{sha1}"
     aws_app_opt = {
       application_name: @application_name,
-      description: "deploy",
+#      description: "deploy",
       source_bundle: {
-        s3_bucket: ENV['FOG_DEPLOY_DIRECTORY'],
-        s3_key: "prj.zip"
+        s3_bucket: ENV['AWS_DEPLOY_BUCKET'],
+        s3_key: @deploy_zip_filename
       },
-      version_label: version_label
+      version_label: @version_label
     }
 
     aws_env_opt = {
-      environment_name: @eb_environment,
-      version_label: version_label
+      environment_name: ENV['ENVIRONMENT'],
+      version_label: @version_label
     }
 
     eb = AWS.elastic_beanstalk
@@ -166,43 +132,38 @@ namespace :eb do
     eb.client.update_environment aws_env_opt
   end
 
-  desc "clean modified files"
-  task :cleanup do
-    File.delete(@aws_credential_file) if File.exist?(@aws_credential_file)
-    do_cmd "git checkout .elasticbeanstalk/config"
-    do_cmd "git checkout config/environments/production.rb"
-#    do_cmd "rm vendor/cache -Rf"
-  end
-
   desc "deploy to elastic beanstalk"
-  task :deploy do
+  task :deploy => [
+    :assets,
+    :bundle_pack,
+    :upload,
+    :update_eb_environment,
+    :create_and_deploy_version
+  ] do
     set_vars
-
+=begin
     print "=== deploy to elastic beanstalk ===\n\n"
 
-#    Rake::Task['eb:cfg'].invoke
     Rake::Task['eb:assets'].invoke
     Rake::Task['eb:bundle_pack'].invoke
     Rake::Task['eb:upload'].invoke
     Rake::Task['eb:publish'].invoke
     Rake::Task['eb:cleanup'].invoke
-
+=end
   end
 
   desc "create application on Elastic Beanstalk"
   task :create_eb_application do
-    set_vars unless @eb_environment
+    set_vars
 
-    ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'FOG_REGION', 'APP_NAME'].each do |opt|
+    ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION', 'APP_NAME'].each do |opt|
       if ENV[opt].nil?
         puts "(Error) #{opt} not defined"
         exit
       end
     end
 
-    apps = AWS.elastic_beanstalk.client.describe_applications(:application_names=>[ENV['APP_NAME']])
-
-    if apps[:applications].empty?
+    unless app_exists?
       opts = {}
       opts[:application_name] = ENV['APP_NAME']
       opts[:description] = ENV['APP_DESC'] unless ENV['APP_DESC'].nil?
@@ -212,12 +173,16 @@ namespace :eb do
     end
   end
 
+  def app_exists?
+    apps = AWS.elastic_beanstalk.client.describe_applications(:application_names=>[ENV['APP_NAME']])
+    !apps[:applications].empty?
+  end
+
   desc "create environment on Elastic Beanstalk"
-  task :create_eb_environment do
-    set_vars unless @eb_environment
-    Rake::Task['eb:create_eb_application'].invoke
+  task :create_eb_environment => :create_eb_application do
+    set_vars
     envs = AWS.elastic_beanstalk.client.describe_environments(:application_name=>ENV['APP_NAME'], :environment_names => [ENV['ENVIRONMENT']])
-    
+
     if envs[:environments].empty?
       #TODO: aggiungere i parametri per RDS, ELB, etc
       AWS.elastic_beanstalk.client.create_environment(:application_name => ENV['APP_NAME'],
@@ -231,8 +196,8 @@ namespace :eb do
   end
 
   desc "update environment on Elastic Beanstalk"
-  task :update_eb_environment do
-    set_vars unless @eb_environment
+  task :update_eb_environment => :create_eb_environment do
+    set_vars
     RAILS_DEFAULT_OPTIONS_KEYS = [:AWS_ACCESS_KEY_ID, :AWS_SECRET_KEY, :BUNDLE_WITHOUT, :PARAM1, :PARAM2, :RACK_ENV, :RAILS_SKIP_ASSET_COMPILATION, :RAILS_SKIP_MIGRATIONS]
     envs = AWS.elastic_beanstalk.client.describe_environments(:application_name=>ENV['APP_NAME'], :environment_names => [ENV['ENVIRONMENT']])
     unless envs[:environments].empty?
