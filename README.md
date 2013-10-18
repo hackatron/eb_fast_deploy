@@ -18,7 +18,10 @@ Or install it yourself as:
 
 ## Usage
 
-TODO: Write usage instructions here
+
+Convention:
+<RAILS_ROOT>/config/eb_environments/<ENVIRONMENT>/env 
+<RAILS_ROOT>/config/eb_environments/<ENVIRONMENT>/ruby_container_options
 
 ## Contributing
 
