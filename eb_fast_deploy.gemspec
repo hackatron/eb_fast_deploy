@@ -8,8 +8,8 @@ Gem::Specification.new do |spec|
   spec.version       = EbFastDeploy::VERSION
   spec.authors       = ["Nicola Brisotto"]
   spec.email         = ["nicolabrisotto@gmail.com"]
-  spec.description   = %q{TODO: Write a gem description}
-  spec.summary       = %q{TODO: Write a gem summary}
+  spec.description   = %q{rake tasks for fast deploy on Elastic BeanStalk}
+  spec.summary       = %q{rake tasks for fast deploy on Elastic BeanStalk}
   spec.homepage      = ""
   spec.license       = "MIT"
 
@@ -20,6 +20,7 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency 'fog'
   spec.add_dependency 'aws-sdk'
+  spec.add_dependency 'dotenv', '>= 0.7'
 
   spec.add_development_dependency "bundler", "~> 1.3"
   spec.add_development_dependency "rake"
