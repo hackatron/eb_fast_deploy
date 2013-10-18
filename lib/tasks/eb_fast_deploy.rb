@@ -1,4 +1,6 @@
 require "eb_fast_deploy/version"
+require 'aws-sdk'
+require 'dotenv/environment'
 
 def do_cmd(cmd)
   print "- - - cmd: #{cmd}\n"
@@ -10,14 +12,25 @@ def set_vars
   ENV['EB_TARGET'] = (ENV['EB_TARGET'] || "STAGE").upcase
   @eb_environment = ENV["EB_#{ENV['EB_TARGET']}_ENVIRONMENT"]
   @application_name = ENV["EB_#{ENV['EB_TARGET']}_APPLICATION_NAME"]
-  ENV['AWS_ACCESS_KEY_ID']= ENV["EB_#{ENV['EB_TARGET']}_AWS_ACCESS_KEY_ID"]
-  ENV['AWS_SECRET_ACCESS_KEY'] = ENV["EB_#{ENV['EB_TARGET']}_AWS_SECRET_ACCESS_KEY"]
+  #ENV['AWS_ACCESS_KEY_ID']= ENV["EB_#{ENV['EB_TARGET']}_AWS_ACCESS_KEY_ID"]
+  #ENV['AWS_SECRET_ACCESS_KEY'] = ENV["EB_#{ENV['EB_TARGET']}_AWS_SECRET_ACCESS_KEY"]
   ENV['EB_ELASTICBEANSTALK_URL'] = ENV["EB_#{ENV['EB_TARGET']}_ELASTICBEANSTALK_URL"]
   ENV['FOG_DIRECTORY'] = ENV["EB_#{ENV['EB_TARGET']}_FOG_DIRECTORY"]
   ENV['FOG_DEPLOY_DIRECTORY'] = ENV["EB_#{ENV['EB_TARGET']}_FOG_DEPLOY_DIRECTORY"]
   @deploy_tmp_dir = "/home/vagrant/tmp/holden-fandom_for_deploy"
   @deploy_zip_file_path = "/home/vagrant/tmp/holden-fandom_for_deploy.zip"
   @aws_credential_file = "#{Rails.root}/tmp/aws_credential_file"
+
+  @env_file_path = Rails.root.to_s+"/config/eb_environments/#{ENV['ENVIRONMENT']}/ruby_container_options"
+  if File.exists?(@env_file_path)
+    @eb_env = Dotenv::Environment.new(@env_file_path)
+  end
+
+  AWS.config(
+    access_key_id: ENV['AWS_ACCESS_KEY_ID'],
+    secret_access_key: ENV['AWS_SECRET_ACCESS_KEY'],
+    region: ENV['FOG_REGION']
+  )
 
   print "--- setting ENV ---\n"
   print "ENV['EB_TARGET']: #{ENV['EB_TARGET']}\n"
@@ -28,6 +41,14 @@ def set_vars
   print "@eb_environment: #{@eb_environment}\n"
   print "@aws_credential_file: #{@aws_credential_file}\n"
   print
+end
+
+def rails_options
+  opts = []
+  @eb_env.each do |k,v| 
+    opts << {:namespace => "aws:elasticbeanstalk:application:environment", :option_name =>k, :value=>v}
+  end
+  opts
 end
 
 namespace :eb do
@@ -121,12 +142,10 @@ namespace :eb do
 
   desc "publish to elastic beanstalk"
   task :publish do
-    AWS.config(
-      access_key_id: ENV['AWS_ACCESS_KEY_ID'],
-      secret_access_key: ENV['AWS_SECRET_ACCESS_KEY'],
-      region: ENV['FOG_REGION']
-    )
-    version_label = "#{Time.now}"
+    set_vars unless @eb_environment
+
+    sha1 = do_cmd "git log | head -1|cut -d \" \" -f2"
+    version_label = "#{Time.now}-git-#{sha1}"
     aws_app_opt = {
       application_name: @application_name,
       description: "deploy",
@@ -168,6 +187,76 @@ namespace :eb do
     Rake::Task['eb:publish'].invoke
     Rake::Task['eb:cleanup'].invoke
 
+  end
+
+  desc "create application on Elastic Beanstalk"
+  task :create_eb_application do
+    set_vars unless @eb_environment
+
+    ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'FOG_REGION', 'APP_NAME'].each do |opt|
+      if ENV[opt].nil?
+        puts "(Error) #{opt} not defined"
+        exit
+      end
+    end
+
+    apps = AWS.elastic_beanstalk.client.describe_applications(:application_names=>[ENV['APP_NAME']])
+
+    if apps[:applications].empty?
+      opts = {}
+      opts[:application_name] = ENV['APP_NAME']
+      opts[:description] = ENV['APP_DESC'] unless ENV['APP_DESC'].nil?
+      AWS.elastic_beanstalk.client.create_application( opts )
+    else
+      print "(Warning) Application \"#{ ENV['APP_NAME'] }\" already exists"
+    end
+  end
+
+  desc "create environment on Elastic Beanstalk"
+  task :create_eb_environment do
+    set_vars unless @eb_environment
+    Rake::Task['eb:create_eb_application'].invoke
+    envs = AWS.elastic_beanstalk.client.describe_environments(:application_name=>ENV['APP_NAME'], :environment_names => [ENV['ENVIRONMENT']])
+    
+    if envs[:environments].empty?
+      #TODO: aggiungere i parametri per RDS, ELB, etc
+      AWS.elastic_beanstalk.client.create_environment(:application_name => ENV['APP_NAME'],
+                                                  :environment_name => ENV['ENVIRONMENT'],
+                                                  :solution_stack_name => ENV['STACK'],
+                                                  :option_settings => rails_options)
+      puts "(Info) Environment \"#{ ENV['ENVIRONMENT'] }\" created"
+    else
+      puts "(Warning) Environment \"#{ ENV['ENVIRONMENT'] }\" already exists"
+    end
+  end
+
+  desc "update environment on Elastic Beanstalk"
+  task :update_eb_environment do
+    set_vars unless @eb_environment
+    RAILS_DEFAULT_OPTIONS_KEYS = [:AWS_ACCESS_KEY_ID, :AWS_SECRET_KEY, :BUNDLE_WITHOUT, :PARAM1, :PARAM2, :RACK_ENV, :RAILS_SKIP_ASSET_COMPILATION, :RAILS_SKIP_MIGRATIONS]
+    envs = AWS.elastic_beanstalk.client.describe_environments(:application_name=>ENV['APP_NAME'], :environment_names => [ENV['ENVIRONMENT']])
+    unless envs[:environments].empty?
+      rails_options_keys = rails_options.map{|opt| opt[:option_name]}
+      env_config = AWS.elastic_beanstalk.client.describe_configuration_settings(:application_name=>ENV['APP_NAME'], :environment_name => ENV['ENVIRONMENT'])
+      options_to_remove = env_config[:configuration_settings].first[:option_settings].select do |opt|
+        opt[:namespace] == "aws:elasticbeanstalk:application:environment" and !rails_options_keys.include?(opt[:option_name]) and !RAILS_DEFAULT_OPTIONS_KEYS.include?(opt[:option_name].to_sym )
+      end
+
+      options_to_remove.each{|opt| puts "(Info) options removed:#{opt[:option_name]}=#{opt[:value]}" }
+
+      options_to_remove.each{|opt| opt.delete(:value) }
+
+      AWS.elastic_beanstalk.client.update_environment(:environment_name => ENV['ENVIRONMENT'],
+                                                 :option_settings => rails_options,
+                                                 :options_to_remove => options_to_remove )
+
+      new_env_config = AWS.elastic_beanstalk.client.describe_configuration_settings(:application_name=>ENV['APP_NAME'], :environment_name => ENV['ENVIRONMENT'])
+      puts "New env config"
+      new_env_config[:configuration_settings].first[:option_settings].each {|opt| puts "(Info) #{opt[:option_name]}=#{opt[:value]}" if opt[:namespace] == "aws:elasticbeanstalk:application:environment" }
+      puts " ----- END ----- "
+    else
+      puts "(Warning) Environment \"#{ ENV['ENVIRONMENT'] }\" doesn't exist"
+    end
   end
 end
 
