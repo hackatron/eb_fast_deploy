@@ -113,7 +113,7 @@ namespace :eb do
     set_vars
 
     aws_app_opt = {
-      application_name: @application_name,
+      application_name: ENV['APP_NAME'],
 #      description: "deploy",
       source_bundle: {
         s3_bucket: ENV['AWS_DEPLOY_BUCKET'],
