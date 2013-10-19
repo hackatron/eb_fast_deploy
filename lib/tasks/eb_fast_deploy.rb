@@ -83,6 +83,12 @@ def do_cmd(cmd)
   print "#{result}\n"
 end
 
+def check_required_variables!(variables_array)
+  variables_array.each do |opt|
+    raise "(Error) #{opt} not defined" if ENV[opt].nil?
+  end
+end
+
 def set_vars
   return if @is_config_loaded
   puts "-------------------------------------------------------------"
@@ -194,6 +200,7 @@ namespace :eb do
     print "\n"
 
     set_vars
+    check_required_variables! ['AWS_DEPLOY_BUCKET', 'AWS_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY']
 
     do_cmd "mkdir #{@deploy_tmp_dir}"
     do_cmd "rm #{@deploy_zip_file_path}"
@@ -271,13 +278,7 @@ namespace :eb do
   desc "create application on Elastic Beanstalk"
   task :create_eb_application do
     set_vars
-
-    ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION', 'APP_NAME'].each do |opt|
-      if ENV[opt].nil?
-        puts "(Error) #{opt} not defined"
-        exit
-      end
-    end
+    check_required_variables! ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION', 'APP_NAME']
 
     unless app_exists?
       opts = {}
