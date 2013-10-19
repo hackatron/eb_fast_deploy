@@ -83,6 +83,38 @@ def do_cmd(cmd)
   print "#{result}\n"
 end
 
+def update_eb_environment(version_label = nil)
+  rails_default_options_names = [:AWS_ACCESS_KEY_ID, :AWS_SECRET_KEY, :BUNDLE_WITHOUT, :PARAM1, :PARAM2, :RACK_ENV, :RAILS_SKIP_ASSET_COMPILATION, :RAILS_SKIP_MIGRATIONS]
+  envs = AWS.elastic_beanstalk.client.describe_environments(:application_name=>ENV['APP_NAME'], :environment_names => [ENV['ENVIRONMENT']])
+  unless envs[:environments].empty?
+    rails_options_keys = rails_options.map{|opt| opt[:option_name]}
+    env_config = AWS.elastic_beanstalk.client.describe_configuration_settings(:application_name=>ENV['APP_NAME'], :environment_name => ENV['ENVIRONMENT'])
+    options_to_remove = env_config[:configuration_settings].first[:option_settings].select do |opt|
+      opt[:namespace] == "aws:elasticbeanstalk:application:environment" and !rails_options_keys.include?(opt[:option_name]) and !rails_default_options_names.include?(opt[:option_name].to_sym )
+    end
+
+    options_to_remove.each{|opt| puts "(Info) options removed:#{opt[:option_name]}=#{opt[:value]}" }
+
+    options_to_remove.each{|opt| opt.delete(:value) }
+
+    if version_label.nil?
+      AWS.elastic_beanstalk.client.update_environment(:environment_name => ENV['ENVIRONMENT'],
+                                               :option_settings => all_options,
+                                               :options_to_remove => options_to_remove )
+    else
+      AWS.elastic_beanstalk.client.update_environment(:environment_name => ENV['ENVIRONMENT'],
+                                               :option_settings => all_options,
+                                               :options_to_remove => options_to_remove )
+    end
+    new_env_config = AWS.elastic_beanstalk.client.describe_configuration_settings(:application_name=>ENV['APP_NAME'], :environment_name => ENV['ENVIRONMENT'])
+    puts "New env config"
+    new_env_config[:configuration_settings].first[:option_settings].each {|opt| puts "(Info) #{opt[:option_name]}=#{opt[:value]}" if opt[:namespace] == "aws:elasticbeanstalk:application:environment" }
+    puts " ----- END ----- "
+  else
+    puts "(Warning) Environment \"#{ ENV['ENVIRONMENT'] }\" doesn't exist"
+  end
+end
+
 def check_required_variables!(variables_array)
   variables_array.each do |opt|
     raise "(Error) #{opt} not defined" if ENV[opt].nil?
@@ -237,7 +269,6 @@ namespace :eb do
 
     aws_app_opt = {
       application_name: ENV['APP_NAME'],
-#      description: "deploy",
       source_bundle: {
         s3_bucket: ENV['AWS_DEPLOY_BUCKET'],
         s3_key: @deploy_zip_filename
@@ -245,14 +276,9 @@ namespace :eb do
       version_label: @version_label
     }
 
-    aws_env_opt = {
-      environment_name: ENV['ENVIRONMENT'],
-      version_label: @version_label
-    }
-
     eb = AWS.elastic_beanstalk
     eb.client.create_application_version aws_app_opt
-    eb.client.update_environment aws_env_opt
+    update_eb_environment( @version_label )
   end
 
   desc "deploy to elastic beanstalk"
@@ -260,7 +286,6 @@ namespace :eb do
     :assets,
     :bundle_pack,
     :upload,
-    :update_eb_environment,
     :create_and_deploy_version
   ] do
     set_vars
@@ -315,30 +340,7 @@ namespace :eb do
   desc "update environment on Elastic Beanstalk"
   task :update_eb_environment => :create_eb_environment do
     set_vars
-    RAILS_DEFAULT_OPTIONS_KEYS = [:AWS_ACCESS_KEY_ID, :AWS_SECRET_KEY, :BUNDLE_WITHOUT, :PARAM1, :PARAM2, :RACK_ENV, :RAILS_SKIP_ASSET_COMPILATION, :RAILS_SKIP_MIGRATIONS]
-    envs = AWS.elastic_beanstalk.client.describe_environments(:application_name=>ENV['APP_NAME'], :environment_names => [ENV['ENVIRONMENT']])
-    unless envs[:environments].empty?
-      rails_options_keys = rails_options.map{|opt| opt[:option_name]}
-      env_config = AWS.elastic_beanstalk.client.describe_configuration_settings(:application_name=>ENV['APP_NAME'], :environment_name => ENV['ENVIRONMENT'])
-      options_to_remove = env_config[:configuration_settings].first[:option_settings].select do |opt|
-        opt[:namespace] == "aws:elasticbeanstalk:application:environment" and !rails_options_keys.include?(opt[:option_name]) and !RAILS_DEFAULT_OPTIONS_KEYS.include?(opt[:option_name].to_sym )
-      end
-
-      options_to_remove.each{|opt| puts "(Info) options removed:#{opt[:option_name]}=#{opt[:value]}" }
-
-      options_to_remove.each{|opt| opt.delete(:value) }
-
-      AWS.elastic_beanstalk.client.update_environment(:environment_name => ENV['ENVIRONMENT'],
-                                                 :option_settings => all_options,
-                                                 :options_to_remove => options_to_remove )
-
-      new_env_config = AWS.elastic_beanstalk.client.describe_configuration_settings(:application_name=>ENV['APP_NAME'], :environment_name => ENV['ENVIRONMENT'])
-      puts "New env config"
-      new_env_config[:configuration_settings].first[:option_settings].each {|opt| puts "(Info) #{opt[:option_name]}=#{opt[:value]}" if opt[:namespace] == "aws:elasticbeanstalk:application:environment" }
-      puts " ----- END ----- "
-    else
-      puts "(Warning) Environment \"#{ ENV['ENVIRONMENT'] }\" doesn't exist"
-    end
+    update_eb_environment
   end
 end
 
