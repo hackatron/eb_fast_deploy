@@ -105,11 +105,11 @@ def set_vars
     puts "(Warning) ruby_container_options doesn't exists"
   end
 
-  @rdb_network_options_path = Rails.root.to_s+"/config/eb_environments/#{ENV['ENVIRONMENT']}/rdb_network_options"
+  @rds_network_options_path = Rails.root.to_s+"/config/eb_environments/#{ENV['ENVIRONMENT']}/rds_network_options"
   if File.exists?(@env_file_path)
-    @rdb_network_options = Dotenv::Environment.new(@rdb_network_options_path);
+    @rds_network_options = Dotenv::Environment.new(@rds_network_options_path);
   else
-    puts "(Warning) rdb_network_options doesn't exists"
+    puts "(Warning) rds_network_options doesn't exists"
   end
 
   AWS.config(
@@ -129,17 +129,17 @@ def rails_options
   opts
 end
 
-def rdb_network_options
+def rds_network_options
   opts = []
-  @rdb_network_options.each do |k,v|
-    raise "(Error) Unknown option \"#{k}\"=#{v} in #{@rdb_network_options_path}, please check Elastic Beanstalk documentation and EbFastDeploy::OPTIONS" unless EbFastDeploy::OPTIONS.include?(k)
+  @rds_network_options.each do |k,v|
+    raise "(Error) Unknown option \"#{k}\"=#{v} in #{@rds_network_options_path}, please check Elastic Beanstalk documentation and EbFastDeploy::OPTIONS" unless EbFastDeploy::OPTIONS.include?(k)
     opts << {:namespace => EbFastDeploy::OPTIONS[k][:namespace], :option_name =>EbFastDeploy::OPTIONS[k][:option_name], :value=>v}
   end
   opts
 end
 
 def all_options
-  rdb_network_options + rails_options
+  rds_network_options + rails_options
 end
 
 def print_env
@@ -150,8 +150,8 @@ def print_env
   puts "@deploy_zip_file_path: #{@deploy_zip_file_path}"
 
   puts "---------------  RDS AND NETWORK --------------\n"
-  rdb_network_options
-  rdb_network_options.each do |opt|
+  rds_network_options
+  rds_network_options.each do |opt|
     puts "#{opt[:namespace]} #{opt[:option_name]}=#{opt[:value]}"
   end
 
