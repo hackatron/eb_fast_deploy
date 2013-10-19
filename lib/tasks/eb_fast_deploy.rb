@@ -92,17 +92,11 @@ def set_vars
   sha1 = `git log | head -1|cut -d \" \" -f2`
   sha1 = sha1.gsub("\n","")
   @version_label = "#{Time.now.to_i}-git-#{sha1}"
-  dirname = "#{ENV['APP_NAME'].gsub(' ', '')}_#{ENV['ENVIRONMENT'].gsub(' ', '')}"
+  @dirname = "#{ENV['APP_NAME'].gsub(' ', '')}_#{ENV['ENVIRONMENT'].gsub(' ', '')}"
 
-  @deploy_tmp_dir = ENV['COPY_CACHE'] || "/tmp/#{dirname}_eb_deploy"
-  @deploy_zip_filename = "#{dirname}_#{@version_label}.zip"
-  @deploy_zip_file_path = "#{@deploy_tmp_dir}/#{@deploy_zip_filename}"
-
-  puts "dirname: #{dirname}"
-  puts "version_label: #{@version_label}"
-  puts "@deploy_tmp_dir: #{@deploy_tmp_dir}"
-  puts "@deploy_zip_filename: #{@deploy_zip_filename}"
-  puts "@deploy_zip_file_path: #{@deploy_zip_file_path}"
+  @deploy_tmp_dir = ENV['COPY_CACHE'] || "/tmp/#{@dirname}_eb_deploy"
+  @deploy_zip_filename = "#{@dirname}_#{@version_label}.zip"
+  @deploy_zip_file_path = File.join(@deploy_tmp_dir, @deploy_zip_filename)
 
   @env_file_path = Rails.root.to_s+"/config/eb_environments/#{ENV['ENVIRONMENT']}/ruby_container_options"
   if File.exists?(@env_file_path)
@@ -123,6 +117,8 @@ def set_vars
     secret_access_key: ENV['AWS_SECRET_ACCESS_KEY'],
     region: ENV['AWS_REGION']
   )
+
+  print_env
 end
 
 def rails_options
@@ -146,6 +142,24 @@ def all_options
   rdb_network_options + rails_options
 end
 
+def print_env
+  puts "@dirname: #{@dirname}"
+  puts "version_label: #{@version_label}"
+  puts "@deploy_tmp_dir: #{@deploy_tmp_dir}"
+  puts "@deploy_zip_filename: #{@deploy_zip_filename}"
+  puts "@deploy_zip_file_path: #{@deploy_zip_file_path}"
+
+  puts "---------------  RDS AND NETWORK --------------\n"
+  rdb_network_options
+  rdb_network_options.each do |opt|
+    puts "#{opt[:namespace]} #{opt[:option_name]}=#{opt[:value]}"
+  end
+
+  puts "---------------  RUBY CONTAINER  --------------\n"
+  rails_options.each do |opt|
+    puts "#{opt[:namespace]} #{opt[:option_name]}=#{opt[:value]}"
+  end
+end
 
 namespace :eb do
   desc "setvars"
@@ -156,21 +170,6 @@ namespace :eb do
   desc "setvars"
   task :print_env do
     set_vars
-    #EbFastDeploy::OPTIONS.each do |k,v|
-    #  puts "#{v[:namespace]} #{v[:option_name]}=#{ENV[k]}"
-    #end
-
-    puts "---------------  RDS AND NETWORK --------------\n"
-    rdb_network_options
-    rdb_network_options.each do |opt|
-      puts "#{opt[:namespace]} #{opt[:option_name]}=#{opt[:value]}"
-    end
-
-    puts "---------------  RUBY CONTAINER  --------------\n"
-    rails_options.each do |opt|
-      puts "#{opt[:namespace]} #{opt[:option_name]}=#{opt[:value]}"
-    end
-    puts all_options
   end
 
   desc "assets compile and upload to S3"
