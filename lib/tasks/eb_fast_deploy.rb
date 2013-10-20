@@ -103,6 +103,7 @@ def update_eb_environment(version_label = nil)
                                                :options_to_remove => options_to_remove )
     else
       AWS.elastic_beanstalk.client.update_environment(:environment_name => ENV['ENVIRONMENT'],
+                                               :version_label => @version_label,
                                                :option_settings => all_options,
                                                :options_to_remove => options_to_remove )
     end
