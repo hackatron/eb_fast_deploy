@@ -227,6 +227,14 @@ namespace :eb do
 
   end
 
+  desc "print the current env status"
+  task :print_current_status do
+    set_vars
+    env = AWS.elastic_beanstalk.client.describe_environments(:application_name=>ENV['APP_NAME'], :environment_names => [ENV['ENVIRONMENT']]).first
+    configuration_settings = AWS.elastic_beanstalk.client.describe_configuration_settings(:application_name=>ENV['APP_NAME'], :environment_name => ENV['ENVIRONMENT'])[:configuration_settings].first
+    configuration_settings[:option_settings].each {|o| puts "#{o[:namespace]} #{o[:option_name]}=#{o[:value]}"}    
+  end
+
   desc "upload project to s3"
   task :upload do
     print "=== upload project to s3 ===\n"
