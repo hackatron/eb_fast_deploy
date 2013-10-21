@@ -102,9 +102,10 @@ def update_eb_environment(options = {})
   version_label = options[:version_label]
   auto_create = options[:auto_create]
 
-  envs = AWS.elastic_beanstalk.client.describe_environments(:application_name=>ENV['APP_NAME'], :environment_names => [ENV['ENVIRONMENT']])
-  puts "envs[:environments] =  #{envs[:environments]}"
-  env = envs[0]
+  env = AWS.elastic_beanstalk.client.describe_environments(:application_name=>ENV['APP_NAME'], :environment_names => [ENV['ENVIRONMENT']])[:environments].first
+
+  raise "Enviroment status \"#{env[:status]}\" not supported" unless env[:status]=="Terminated" || env[:status]=="Ready"
+
   unless env.nil? || env[:status]=="Terminated"
     if version_label.nil?
       AWS.elastic_beanstalk.client.update_environment(:environment_name => ENV['ENVIRONMENT'],
@@ -254,9 +255,14 @@ namespace :eb do
   desc "print the current env status"
   task :print_current_status do
     set_vars
-    env = AWS.elastic_beanstalk.client.describe_environments(:application_name=>ENV['APP_NAME'], :environment_names => [ENV['ENVIRONMENT']]).first
-    configuration_settings = AWS.elastic_beanstalk.client.describe_configuration_settings(:application_name=>ENV['APP_NAME'], :environment_name => ENV['ENVIRONMENT'])[:configuration_settings].first
-    configuration_settings[:option_settings].each {|o| puts "#{o[:namespace]} #{o[:option_name]}=#{o[:value]}"}    
+    env = AWS.elastic_beanstalk.client.describe_environments(:application_name=>ENV['APP_NAME'], :environment_names => [ENV['ENVIRONMENT']])[:environments].first
+    if env
+      puts "Environment Status = #{env[:status]}"
+      configuration_settings = AWS.elastic_beanstalk.client.describe_configuration_settings(:application_name=>ENV['APP_NAME'], :environment_name => ENV['ENVIRONMENT'])[:configuration_settings].first
+      configuration_settings[:option_settings].each {|o| puts "#{o[:namespace]} #{o[:option_name]}=#{o[:value]}"}
+    else
+      puts "(Warning) Environment \"#{ ENV['ENVIRONMENT'] }\" doesn't exist"
+    end
   end
 
   desc "upload project to s3"
