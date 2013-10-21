@@ -187,9 +187,13 @@ end
 
 def rails_options
   opts = []
+  #Default SYSLOG_APPLICATION_NAME
+  opts << {:namespace => "aws:elasticbeanstalk:application:environment", :option_name =>"SYSLOG_APPLICATION_NAME", :value=>"#{ENV['APP_NAME'].gsub(' ', '')}_#{ENV['ENVIRONMENT'].gsub(' ', '')}"} unless ENV['SYSLOG_APPLICATION_NAME']
+  
   @eb_ruby_container_options.each do |k,v|
     opts << {:namespace => "aws:elasticbeanstalk:application:environment", :option_name =>k, :value=>v}
   end
+
   opts
 end
 
