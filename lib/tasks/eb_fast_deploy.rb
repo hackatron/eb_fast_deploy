@@ -282,7 +282,8 @@ namespace :eb do
         s3_bucket: ENV['AWS_DEPLOY_BUCKET'],
         s3_key: @deploy_zip_filename
       },
-      version_label: @version_label
+      version_label: @version_label,
+      auto_create_application:true
     }
 
     eb = AWS.elastic_beanstalk
