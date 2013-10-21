@@ -83,10 +83,9 @@ def do_cmd(cmd)
   print "#{result}\n"
 end
 
-def update_eb_environment(version_label = nil)
+def update_or_create_eb_environment_options_to_remove
   rails_default_options_names = [:AWS_ACCESS_KEY_ID, :AWS_SECRET_KEY, :BUNDLE_WITHOUT, :PARAM1, :PARAM2, :RACK_ENV, :RAILS_SKIP_ASSET_COMPILATION, :RAILS_SKIP_MIGRATIONS]
-  envs = AWS.elastic_beanstalk.client.describe_environments(:application_name=>ENV['APP_NAME'], :environment_names => [ENV['ENVIRONMENT']])
-  unless envs[:environments].empty?
+
     rails_options_keys = rails_options.map{|opt| opt[:option_name]}
     env_config = AWS.elastic_beanstalk.client.describe_configuration_settings(:application_name=>ENV['APP_NAME'], :environment_name => ENV['ENVIRONMENT'])
     options_to_remove = env_config[:configuration_settings].first[:option_settings].select do |opt|
@@ -96,23 +95,48 @@ def update_eb_environment(version_label = nil)
     options_to_remove.each{|opt| puts "(Info) options removed:#{opt[:option_name]}=#{opt[:value]}" }
 
     options_to_remove.each{|opt| opt.delete(:value) }
+    options_to_remove
+end
 
+def update_eb_environment(options = {})
+  version_label = options[:version_label]
+  auto_create = options[:auto_create]
+
+  envs = AWS.elastic_beanstalk.client.describe_environments(:application_name=>ENV['APP_NAME'], :environment_names => [ENV['ENVIRONMENT']])
+  puts "envs[:environments] =  #{envs[:environments]}"
+  env = envs[0]
+  unless env.nil? || env[:status]=="Terminated"
     if version_label.nil?
       AWS.elastic_beanstalk.client.update_environment(:environment_name => ENV['ENVIRONMENT'],
                                                :option_settings => all_options,
-                                               :options_to_remove => options_to_remove )
+                                               :options_to_remove => update_or_create_eb_environment_options_to_remove )
     else
       AWS.elastic_beanstalk.client.update_environment(:environment_name => ENV['ENVIRONMENT'],
                                                :version_label => @version_label,
                                                :option_settings => all_options,
-                                               :options_to_remove => options_to_remove )
+                                               :options_to_remove => update_or_create_eb_environment_options_to_remove )
     end
     new_env_config = AWS.elastic_beanstalk.client.describe_configuration_settings(:application_name=>ENV['APP_NAME'], :environment_name => ENV['ENVIRONMENT'])
     puts "New env config"
     new_env_config[:configuration_settings].first[:option_settings].each {|opt| puts "(Info) #{opt[:option_name]}=#{opt[:value]}" if opt[:namespace] == "aws:elasticbeanstalk:application:environment" }
     puts " ----- END ----- "
-  else
-    puts "(Warning) Environment \"#{ ENV['ENVIRONMENT'] }\" doesn't exist"
+  else 
+    if auto_create
+      if version_label.nil?
+            AWS.elastic_beanstalk.client.create_environment(:application_name => ENV['APP_NAME'],
+                                                  :environment_name => ENV['ENVIRONMENT'],
+                                                  :solution_stack_name => ENV['STACK'],
+                                                  :option_settings => all_options)
+      else
+                  AWS.elastic_beanstalk.client.create_environment(:application_name => ENV['APP_NAME'],
+                                                  :environment_name => ENV['ENVIRONMENT'],
+                                                  :solution_stack_name => ENV['STACK'],
+                                                  :version_label => @version_label,
+                                                  :option_settings => all_options)
+      end
+    else
+      puts "(Warning) Environment \"#{ ENV['ENVIRONMENT'] }\" doesn't exist"
+    end
   end
 end
 
@@ -288,7 +312,7 @@ namespace :eb do
 
     eb = AWS.elastic_beanstalk
     eb.client.create_application_version aws_app_opt
-    update_eb_environment( @version_label )
+    update_eb_environment({:version_label => @version_label, :auto_create => true})
   end
 
   desc "deploy to elastic beanstalk"
