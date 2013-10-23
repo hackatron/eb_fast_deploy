@@ -104,7 +104,9 @@ def update_eb_environment(options = {})
 
   env = AWS.elastic_beanstalk.client.describe_environments(:application_name=>ENV['APP_NAME'], :environment_names => [ENV['ENVIRONMENT']])[:environments].first
 
-  raise "Enviroment status \"#{env[:status]}\" not supported" unless env[:status]=="Terminated" || env[:status]=="Ready"
+  if (env.present? && !["Terminated", "Ready"].include?(env[:status]))
+    raise "Enviroment status \"#{env[:status]}\" not supported"
+  end
 
   unless env.nil? || env[:status]=="Terminated"
     if version_label.nil?
@@ -121,7 +123,7 @@ def update_eb_environment(options = {})
     puts "New env config"
     new_env_config[:configuration_settings].first[:option_settings].each {|opt| puts "(Info) #{opt[:option_name]}=#{opt[:value]}" if opt[:namespace] == "aws:elasticbeanstalk:application:environment" }
     puts " ----- END ----- "
-  else 
+  else
     if auto_create
       if version_label.nil?
             AWS.elastic_beanstalk.client.create_environment(:application_name => ENV['APP_NAME'],
@@ -150,6 +152,10 @@ end
 def set_vars
   return if @is_config_loaded
   puts "-------------------------------------------------------------"
+
+  if (ENV['ENVIRONMENT'].include?("_"))
+    raise "Value ENV['ENVIRONMENT'] at 'EnvironmentName' failed to satisfy constraint: Member must contain only letters, digits, and the dash character and may not start or end with a dash"
+  end
 
   @is_config_loaded = true
 
@@ -189,7 +195,7 @@ def rails_options
   opts = []
   #Default SYSLOG_APPLICATION_NAME
   opts << {:namespace => "aws:elasticbeanstalk:application:environment", :option_name =>"SYSLOG_APPLICATION_NAME", :value=>"#{ENV['APP_NAME'].gsub(' ', '')}_#{ENV['ENVIRONMENT'].gsub(' ', '')}"} unless ENV['SYSLOG_APPLICATION_NAME']
-  
+
   @eb_ruby_container_options.each do |k,v|
     opts << {:namespace => "aws:elasticbeanstalk:application:environment", :option_name =>k, :value=>v}
   end
@@ -286,10 +292,10 @@ namespace :eb do
 
     print "storage = Fog::Storage.new provider: AWS, aws_access_key_id: #{ENV['AWS_ACCESS_KEY_ID']}, aws_secret_access_key: #{ENV['AWS_SECRET_ACCESS_KEY']}\n"
     storage = Fog::Storage.new({
-    provider: 'AWS',
-    region: ENV['AWS_REGION'],
-    aws_access_key_id: ENV['AWS_ACCESS_KEY_ID'],
-    aws_secret_access_key: ENV['AWS_SECRET_ACCESS_KEY']
+      provider: 'AWS',
+      region: ENV['AWS_REGION'],
+      aws_access_key_id: ENV['AWS_ACCESS_KEY_ID'],
+      aws_secret_access_key: ENV['AWS_SECRET_ACCESS_KEY']
     })
     print "bucket = storage.directories.get(#{ENV['AWS_DEPLOY_BUCKET']})\n"
     bucket = storage.directories.get(ENV['AWS_DEPLOY_BUCKET'])
