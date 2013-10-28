@@ -1,6 +1,10 @@
 # EbFastDeploy
 
-TODO: Write a gem description
+  easy AWS elastic beanstalk deploy
+
+```
+  foreman run -e config/eb_environments/<ENVIRONMENT>/env rake eb:deploy
+```
 
 ## Installation
 
