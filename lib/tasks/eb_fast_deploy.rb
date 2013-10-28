@@ -175,6 +175,10 @@ def set_vars
     puts "(Warning) ruby_container_options doesn't exists"
   end
 
+  @asset_host = ENV['ASSET_HOST']
+
+  puts "------------- ENV['ASSET_HOST']: #{ENV['ASSET_HOST']} ---------------"
+
   @rds_network_options_path = Rails.root.to_s+"/config/eb_environments/#{ENV['ENVIRONMENT']}/rds_network_options"
   if File.exists?(@env_file_path)
     @rds_network_options = Dotenv::Environment.new(@rds_network_options_path);
@@ -222,6 +226,7 @@ def print_env
   puts "@deploy_tmp_dir: #{@deploy_tmp_dir}"
   puts "@deploy_zip_filename: #{@deploy_zip_filename}"
   puts "@deploy_zip_file_path: #{@deploy_zip_file_path}"
+  puts "@asset_host: #{@asset_host}"
 
   puts "---------------  RDS AND NETWORK --------------\n"
   rds_network_options
@@ -250,7 +255,7 @@ namespace :eb do
   task :assets do
     set_vars
 
-    do_cmd "rake assets:precompile"
+    do_cmd "rake assets:precompile ASSET_HOST=#{@asset_host}"
   end
 
   desc "bundle pack"
