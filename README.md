@@ -24,12 +24,18 @@ Or install it yourself as:
 
 
 Convention:
+
 <RAILS_ROOT>/config/eb_environments/<ENVIRONMENT>/env 
-Variabili di inizializzazione del RAKE TASK.
+
+Stack and eb configuration variables.
+
 <RAILS_ROOT>/config/eb_environments/<ENVIRONMENT>/ruby_container_options
-Variabili di ambiente utilizzate nell'applicazione, verranno memorizzate in elasticbeanstalk > configuration.
+
+Environments variables used in application.
+
 <RAILS_ROOT>/config/eb_environments/<ENVIRONMENT>/rds_network_options
-Configurazioni di sistema su rds e network, come autoscaling e chiavi.
+
+Rds and network configurations.
 
 ## Contributing
 
