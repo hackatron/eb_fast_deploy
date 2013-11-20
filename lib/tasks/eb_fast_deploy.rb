@@ -2,6 +2,7 @@ require "eb_fast_deploy/version"
 require 'aws-sdk'
 require 'dotenv/environment'
 require 'fog'
+require 'erb'
 
 module EbFastDeploy
 
@@ -267,6 +268,28 @@ namespace :eb do
 
   end
 
+  desc "Set eb extension to run whenever on all instances"
+  task :whenever_ebextension do
+    set_vars
+    if @eb_ruby_container_options["WHENEVER_ALL"] == "true"
+      template=<<-EOF
+commands:
+  01whenever:
+    command: bundle exec whenever --set environment=$RACK_ENV -u webapp --update-crontab >/tmp/whenever_command.log 2>&1
+    leader_only: false
+    EOF
+      output_file = ".ebextensions/whenever_all.config"
+      dir = File.dirname output_file
+      unless File.directory?(dir)
+        FileUtils.mkdir_p(dir)
+      end
+      File.delete output_file if File.exists? output_file
+      output = File.open(File.join(Rails.root, output_file), "w")
+      output << ERB.new( template).result(binding)
+    end
+  end
+
+
   desc "print the current env status"
   task :print_current_status do
     set_vars
@@ -339,6 +362,7 @@ namespace :eb do
   desc "deploy to elastic beanstalk"
   task :deploy => [
     :assets,
+    :whenever_ebextension,
     :bundle_pack,
     :upload,
     :create_and_deploy_version
