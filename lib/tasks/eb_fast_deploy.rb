@@ -273,12 +273,12 @@ namespace :eb do
     set_vars
     if @eb_ruby_container_options["WHENEVER_ALL"] == "true"
       template=<<-EOF
-commands:
-  01whenever:
-    command: bundle exec whenever --set environment=$RACK_ENV -u webapp --update-crontab >/tmp/whenever_command.log 2>&1
+container_commands:
+  02whenever:
+    command: bundle exec whenever --set environment=$RAILS_ENV -u webapp --update-crontab >/tmp/whenever_command.log 2>&1
     leader_only: false
-    EOF
-      output_file = ".ebextensions/whenever_all.config"
+EOF
+      output_file = ".ebextensions/whenever.config"
       dir = File.dirname output_file
       unless File.directory?(dir)
         FileUtils.mkdir_p(dir)
@@ -286,6 +286,7 @@ commands:
       File.delete output_file if File.exists? output_file
       output = File.open(File.join(Rails.root, output_file), "w")
       output << ERB.new( template).result(binding)
+      output.close
     end
   end
 
