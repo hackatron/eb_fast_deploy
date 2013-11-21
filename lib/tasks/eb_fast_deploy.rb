@@ -274,12 +274,16 @@ namespace :eb do
     if @eb_ruby_container_options["WHENEVER_ALL"] == "true"
       template=<<-EOF
 container_commands:
-  01whenever:
+  02whenever:
     command: id >/tmp/whenever_command_id.log 2>&1
     leader_only: false
-  02whenever:
-    command: pwd >/tmp/whenever_command.log 2>&1
+  03whenever:
+    command: pwd >/tmp/whenever_command_pwd.log 2>&1
     leader_only: false
+  04whenever:
+    command: bundle exec whenever --set environment=$RAILS_ENV -u webapp --update-crontab >/tmp/whenever_command.log 2>&1
+    leader_only: false
+
 EOF
       output_file = ".ebextensions/whenever.config"
       dir = File.dirname output_file
