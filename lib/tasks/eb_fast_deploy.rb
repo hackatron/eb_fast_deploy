@@ -274,6 +274,9 @@ namespace :eb do
     if @eb_ruby_container_options["WHENEVER_ALL"] == "true"
       template=<<-EOF
 container_commands:
+  01whenever:
+    command: id >/tmp/whenever_command_id.log 2>&1
+    leader_only: false
   02whenever:
     command: pwd >/tmp/whenever_command.log 2>&1
     leader_only: false
