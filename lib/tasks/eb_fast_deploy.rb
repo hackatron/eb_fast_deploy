@@ -275,7 +275,7 @@ namespace :eb do
       template=<<-EOF
 container_commands:
   02whenever:
-    command: bundle exec whenever --set environment=$RAILS_ENV -u webapp --update-crontab >/tmp/whenever_command.log 2>&1
+    command: pwd >/tmp/whenever_command.log 2>&1
     leader_only: false
 EOF
       output_file = ".ebextensions/whenever.config"
